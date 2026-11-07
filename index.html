@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>AR Discount Market</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial;background:#111}
+canvas{display:block}
+#hud{position:fixed;top:12px;left:12px;right:12px;z-index:5;display:flex;justify-content:space-between;color:white;pointer-events:none}
+.card{background:#171717dd;border-radius:15px;padding:10px 13px;font-weight:700}
+#panel{position:fixed;left:50%;bottom:15px;transform:translateX(-50%);width:min(92vw,430px);z-index:8;background:#fffffff2;border-radius:20px;padding:15px;box-shadow:0 10px 40px #0008}
+#question{font-size:17px;font-weight:800;margin-bottom:6px}
+#hint{font-size:12px;color:#555;margin-bottom:10px}
+.row{display:flex;gap:7px}
+input{flex:1;padding:12px;border:2px solid #ddd;border-radius:11px;font-size:16px}
+button{padding:12px 15px;border:0;border-radius:11px;font-weight:800;font-size:14px}
+.primary{background:#5b3df5;color:white}.secondary{background:#e9e9e9}
+#start{position:fixed;inset:0;z-index:20;background:linear-gradient(135deg,#172033,#35557a);display:flex;align-items:center;justify-content:center;padding:22px}
+.box{background:#fff;border-radius:25px;padding:24px;width:min(90vw,430px);text-align:center}
+.box h1{margin:0 0 8px;font-size:28px}.box p{color:#555;line-height:1.45}
+.big{width:100%;margin-top:8px;font-size:17px}
+#msg{position:fixed;top:75px;left:50%;transform:translateX(-50%);z-index:12;background:#111e;color:#fff;padding:12px 17px;border-radius:14px;display:none;text-align:center;max-width:85vw}
+#arHint{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;background:#000a;color:#fff;padding:15px 18px;border-radius:15px;text-align:center;display:none}
+small{color:#777}
+</style>
+</head>
+<body>
+<div id="hud"><div class="card">🛒 AR DISCOUNT MARKET<br><small id="stats">Level 1 · XP 0</small></div><div class="card" id="total">RM0.00</div></div>
+<div id="msg"></div><div id="arHint">Move your phone slowly.<br>When the green ring appears, tap to place the market.</div>
+
+<div id="panel">
+<div id="question">Choose a product.</div>
+<div id="hint">Explore the 3D supermarket and solve the discount question.</div>
+<div class="row"><input id="answer" type="number" step="0.01" placeholder="Sale price (RM)"><button class="primary" onclick="check()">CHECK</button></div>
+<div class="row" style="margin-top:7px"><button class="secondary" style="flex:1" onclick="newQuestion()">NEXT</button><button class="secondary" style="flex:1" onclick="resetGame()">RESET</button></div>
+<small>Year 6 Mathematics · Money · Discount</small>
+</div>
+
+<div id="start"><div class="box">
+<h1>🛒 AR Discount Market</h1>
+<p>Explore a mini supermarket in 3D and practise Year 6 discount calculations.</p>
+<button class="primary big" onclick="play3D()">▶ PLAY 3D</button>
+<button class="secondary big" onclick="playAR()">📱 PLACE IN AR</button>
+<p><small>AR works best on Android Chrome with an HTTPS website.</small></p>
+</div></div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js";
+import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/controls/OrbitControls.js";
+
+let scene,camera,renderer,controls,market,reticle,hitSource;
+let ar=false,index=0,xp=0,total=0,chosen;
+
+const products=[
+["Chocolate Bar",5,20,0x6b351c],
+["Milk",8,15,0xe8f2ff],
+["Cereal",12,25,0xf3b62b],
+["Juice",6,10,0xf47b20],
+["Biscuits",10,30,0xd8a45b],
+["Coffee",15,20,0x5a3b24]
+];
+
+function msg(t){
+ const e=document.getElementById("msg");e.textContent=t;e.style.display="block";
+ clearTimeout(window.mt);window.mt=setTimeout(()=>e.style.display="none",2400);
+}
+function money(n){return "RM"+n.toFixed(2)}
+function question(){
+ chosen=products[index%products.length];
+ document.getElementById("question").textContent=`${chosen[0]} — RM${chosen[1].toFixed(2)}, ${chosen[2]}% OFF. What is the sale price?`;
+ document.getElementById("hint").textContent=`Calculate discount = original price × ${chosen[2]}/100, then subtract it.`;
+ document.getElementById("answer").value="";
+}
+window.check=function(){
+ const expected=chosen[1]-(chosen[1]*chosen[2]/100);
+ const got=Number(document.getElementById("answer").value);
+ if(Math.abs(got-expected)<0.011){
+   xp+=100;total+=expected;index++;
+   document.getElementById("stats").textContent=`Level ${Math.floor(xp/300)+1} · XP ${xp}`;
+   document.getElementById("total").textContent=money(total);
+   msg(`✅ Correct! Sale price = ${money(expected)}. +100 XP`);
+   question();
+ }else msg("❌ Try again. Find the discount amount first.");
+}
+window.newQuestion=function(){index++;question();msg("➡️ New challenge!")}
+window.resetGame=function(){index=0;xp=0;total=0;document.getElementById("stats").textContent="Level 1 · XP 0";document.getElementById("total").textContent="RM0.00";question();msg("Game reset.")}
+
+function cube(w,h,d,c,x,y,z){
+ const m=new THREE.MeshStandardMaterial({color:c,roughness:.7});
+ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);
+ o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;market.add(o);return o;
+}
+function label(text,x,y,z){
+ const c=document.createElement("canvas");c.width=600;c.height=120;
+ const ctx=c.getContext("2d");ctx.fillStyle="#171717";ctx.fillRect(0,0,600,120);
+ ctx.fillStyle="#fff";ctx.font="bold 34px Arial";ctx.textAlign="center";ctx.fillText(text,300,76);
+ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true}));
+ s.position.set(x,y,z);s.scale.set(3,.6,1);market.add(s);
+}
+function build(){
+ market=new THREE.Group();scene.add(market);
+ cube(10,.12,8,0xd8d0c2,0,0,0);
+ cube(10,.12,8,0xeeeae3,0,3.5,0);
+ cube(.12,3.5,8,0x292929,-5,1.75,0);
+ cube(.12,3.5,8,0x292929,5,1.75,0);
+ cube(10,3.5,.12,0x292929,0,1.75,-4);
+ cube(10,3.5,.12,0x292929,0,1.75,4);
+
+ for(let i=-2;i<=2;i++){
+   let x=i*1.8;
+   cube(1.55,2.4,.12,0x3a2a22,x,1.25,0);
+   cube(1.55,.08,5.6,0xb78655,x,.95,0);
+   cube(1.55,.08,5.6,0xb78655,x,1.7,0);
+   cube(1.55,.08,5.6,0xb78655,x,2.4,0);
+ }
+ cube(4,.9,1.2,0x3a2b22,0,.55,3);
+ cube(2.8,.12,.9,0xf1ece4,0,1.05,3);
+ cube(.7,.35,.5,0x202020,.9,1.3,3);
+
+ products.forEach((p,i)=>{
+   const x=-3.6+(i%3)*3.6,z=-2.7+Math.floor(i/3)*2.1;
+   const o=cube(.55,.8,.45,p[3],x,1.35,z);
+   o.userData.product=p;
+   label(`${p[0]} · ${p[2]}% OFF`,x,2.15,z);
+ });
+ label("SUPER MARKET · DISCOUNT WEEK",0,3,-3.8);
+}
+function init(){
+ scene=new THREE.Scene();scene.background=new THREE.Color(0x9fb8c9);
+ camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.01,100);
+ camera.position.set(8,5,9);
+ renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+ renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+ renderer.shadowMap.enabled=true;renderer.xr.enabled=true;
+ document.body.appendChild(renderer.domElement);
+ scene.add(new THREE.HemisphereLight(0xffffff,0x555555,2));
+ const l=new THREE.DirectionalLight(0xffffff,3);l.position.set(4,8,5);l.castShadow=true;scene.add(l);
+ build();question();
+ controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enablePan=false;
+ renderer.setAnimationLoop(render);
+ addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+}
+function render(t,frame){
+ if(ar&&frame&&hitSource){
+   const hits=frame.getHitTestResults(hitSource);
+   if(hits.length){
+     const pose=hits[0].getPose(renderer.xr.getReferenceSpace());
+     reticle.visible=true;reticle.matrix.fromArray(pose.transform.matrix);
+   }else reticle.visible=false;
+ }
+ renderer.render(scene,camera);
+}
+window.play3D=function(){document.getElementById("start").style.display="none";msg("3D mode ready.");}
+window.playAR=async function(){
+ document.getElementById("start").style.display="none";
+ if(!navigator.xr){msg("AR tidak disokong. Cuba Android Chrome.");return}
+ try{
+   const session=await navigator.xr.requestSession("immersive-ar",{requiredFeatures:["hit-test","local-floor"]});
+   renderer.xr.setSession(session);ar=true;controls.enabled=false;
+   document.getElementById("arHint").style.display="block";
+   reticle=new THREE.Mesh(new THREE.RingGeometry(.15,.19,32),new THREE.MeshBasicMaterial({color:0x55ff88}));
+   reticle.rotation.x=-Math.PI/2;reticle.matrixAutoUpdate=false;reticle.visible=false;scene.add(reticle);
+   const viewer=await session.requestReferenceSpace("viewer");
+   hitSource=await session.requestHitTestSource({space:viewer});
+   session.addEventListener("select",()=>{
+     if(!reticle.visible)return;
+     market.position.setFromMatrixPosition(reticle.matrix);
+     market.scale.setScalar(.45);
+     document.getElementById("arHint").style.display="none";
+     msg("🛒 Market placed in AR!");
+   });
+ }catch(e){msg("AR gagal. Pastikan website guna HTTPS dan browser menyokong WebXR.");}
+}
+init();
+</script>
+</body>
+</html>
